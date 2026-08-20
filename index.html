@@ -7,6 +7,7 @@
 <script src="https://registry.npmmirror.com/echarts/5.5.1/files/dist/echarts.min.js"></script>
 <script src="world.js"></script>
 <script src="admin1.js"></script>
+<script src="cities.js"></script>
 <style>
   :root{
     --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
@@ -125,9 +126,9 @@
   <div class="wrap">
     <aside>
       <div class="form">
-        <label>快速输入（可自动识别 区/市/省/国）</label>
+        <label>快速输入（自动识别 区/市/省/国/国外城市）</label>
         <div class="row"><div class="field">
-          <input id="nameInput" list="suggest" placeholder="如：杭州 / 西湖区 / 浙江省 / 日本" autocomplete="off" />
+          <input id="nameInput" list="suggest" placeholder="如：杭州 / 浙江省 / 日本 / 巴黎" autocomplete="off" />
         </div></div>
         <datalist id="suggest"></datalist>
 
@@ -138,7 +139,7 @@
           <div class="field"><select id="daySel"></select></div>
         </div>
 
-        <div class="group-title">精确选择（中国可到区县，国外可到州/省）</div>
+        <div class="group-title">精确选择（中国到区县，国外到州/省或城市）</div>
         <div class="row">
           <div class="field"><select id="selCountry"></select></div>
           <div class="field" id="provField"><select id="selProvince"></select></div>
@@ -311,6 +312,7 @@ let admin1 = null;
 const worldByName = new Map();
 const worldByIso = new Map();
 const admin1ByIso = new Map();
+const cityWorldIndex = new Map(); // normKey -> 城市对象数组（按人口降序）
 
 const chart = echarts.init($('map'));
 
@@ -337,6 +339,31 @@ function buildWorldIndex(gj){
     if (p.name) worldByName.set(p.name.toLowerCase(), f);
     if (p.nameZh){ worldByName.set(p.nameZh.toLowerCase(), f); worldByName.set(p.nameZh, f); }
   }
+}
+function buildCityIndex(){
+  cityWorldIndex.clear();
+  for (const c of (window.CITIES || [])){
+    if (c[3] === 'CN') continue; // 中国城市由 DataV 的 cityIndex 处理
+    const obj = { en:c[0], zh:c[1], countryZh:c[2], iso2:c[3], continent:c[4], lat:c[5], lng:c[6], pop:c[7] };
+    const keys = [];
+    if (c[0]) keys.push(c[0].toLowerCase());
+    if (c[1] && c[1] !== c[0]) keys.push(c[1]);
+    for (const k of keys){
+      if (!k) continue;
+      if (!cityWorldIndex.has(k)) cityWorldIndex.set(k, []);
+      cityWorldIndex.get(k).push(obj);
+    }
+  }
+}
+function matchWorldCity(raw){
+  const name = (raw || '').trim();
+  if (!name) return null;
+  let arr = cityWorldIndex.get(name.toLowerCase());
+  if (!arr || !arr.length) arr = cityWorldIndex.get(name);
+  return (arr && arr.length) ? arr[0] : null;
+}
+function cityListOfIso(iso2){
+  return (window.CITIES || []).filter(c => c[3] === iso2).map(c => ({ en:c[0], zh:c[1], lat:c[5], lng:c[6], pop:c[7] }));
 }
 function featureCentroid(geom){
   if (!geom) return null;
@@ -393,6 +420,18 @@ function resolvePlaceName(raw){
     const continent = CONTINENT_ZH[p.continentEn] || '其他';
     const cn = p.nameZh || p.name || name;
     return { name, continent, country:cn, iso2:p.iso2 || '' };
+  }
+  const cityMatch = matchWorldCity(name);
+  if (cityMatch){
+    const hit = countryByIso.get(cityMatch.iso2);
+    return {
+      name: cityMatch.zh || cityMatch.en,
+      continent: (cityMatch.continent && cityMatch.continent !== '其他') ? cityMatch.continent : (hit ? hit.continent : '其他'),
+      country: hit ? hit.cn : (cityMatch.countryZh || cityMatch.en),
+      iso2: cityMatch.iso2,
+      province: null, city: cityMatch.zh || cityMatch.en, district: null, state: null,
+      lat: cityMatch.lat, lng: cityMatch.lng, level: 'city'
+    };
   }
   return null;
 }
@@ -665,6 +704,7 @@ function regionOf(p, scope){
   if (scope.mode === 'world') return { key:p.continent, label:p.continent, coords:CONTINENT_CENTER[p.continent] || null };
   if (scope.mode === 'continent') return countryPoint(p);
   if (scope.mode === 'country'){
+    if (p.level === 'city' && typeof p.lat === 'number') return { key:p.name, label:p.name, coords:[p.lng, p.lat] };
     if (p.country !== '中国' && p.state) return statePointOf(p, p.country);
     return countryPoint(p);
   }
@@ -920,7 +960,9 @@ function updateJourney(){
       html += `<div class="month-sep">${ym ? (ym.slice(0,4) + ' 年 ' + (+ym.slice(5)) + ' 月') : '未标注日期'}</div>`;
     }
     idx++;
-    const hi = [p.country, p.province, p.city, p.district, p.state].filter(Boolean).join(' · ');
+    const hi = p.level === 'city'
+      ? [p.country, p.state].filter(Boolean).join(' · ')
+      : [p.country, p.province, p.city, p.district, p.state].filter(Boolean).join(' · ');
     html += `<div class="item">
       <div class="no">${idx}</div>
       <div class="body">
@@ -1025,16 +1067,22 @@ async function fillStateSelect(restoreValue){
   const country = $('selCountry').value;
   const sel = $('selState');
   if (country === '中国' || !country){ sel.innerHTML = '<option value="">（不适用）</option>'; return; }
-  sel.innerHTML = '<option value="">加载州/省…</option>';
+  sel.innerHTML = '<option value="">加载…</option>';
   try {
     await ensureAdmin1();
     const iso = countryIso(country);
     const feats = admin1ByIso.get(iso) || [];
-    sel.innerHTML = '<option value="">（不选，仅到国家）</option>' +
-      feats.map(f => { const dn = stateDisplayName(f); return `<option value="${esc(dn)}">${esc(dn)}</option>`; }).join('');
+    if (feats.length){
+      sel.innerHTML = '<option value="">（不选，仅到国家）</option>' +
+        feats.map(f => { const dn = stateDisplayName(f); return `<option value="${esc(dn)}">${esc(dn)}</option>`; }).join('');
+    } else {
+      const cities = cityListOfIso(iso).slice(0, 200);
+      sel.innerHTML = '<option value="">（不选，仅到国家）</option>' +
+        cities.map(c => `<option value="${esc(c.zh || c.en)}">${esc(c.zh || c.en)}</option>`).join('');
+    }
     if (restoreValue && [...sel.options].some(o => o.value === restoreValue)) sel.value = restoreValue;
   } catch(e){
-    sel.innerHTML = '<option value="">州/省加载失败</option>';
+    sel.innerHTML = '<option value="">加载失败</option>';
   }
 }
 function updateCascadeVisibility(){
@@ -1091,8 +1139,11 @@ function handleAdd(){
     const resolved = resolvePlaceName(raw);
     if (resolved){
       addPlace({ ...resolved, date });
+      const hiParts = resolved.level === 'city'
+        ? [resolved.country, resolved.state].filter(Boolean)
+        : [resolved.country, resolved.province, resolved.city, resolved.district, resolved.state].filter(Boolean);
       $('resolveChip').className = 'resolve-chip';
-      $('resolveChip').innerHTML = `已识别：<b>${esc(resolved.name)}</b>（${esc([resolved.country,resolved.province,resolved.city,resolved.district,resolved.state].filter(Boolean).join(' / ') || '国家')}）`;
+      $('resolveChip').innerHTML = `已识别：<b>${esc(resolved.name)}</b>（${esc(hiParts.join(' / ') || '国家')}）`;
     } else {
       $('resolveChip').className = 'resolve-chip err';
       $('resolveChip').textContent = '未识别，请用下方的精确选择，或输入 省/市/国家 名称';
@@ -1107,11 +1158,20 @@ function handleAdd(){
       const nm = district || city || province;
       addPlace({ name: nm, continent:'亚洲', country:'中国', iso2:'CN', province, city, district, state:null, date });
     } else {
-      const state = $('selState').value || null;
+      const selVal = $('selState').value || null;
       const hit = countryByCn.get(country);
       const cont = hit ? hit.continent : (continentOfCountry(country) || '其他');
       const iso2 = hit ? hit.iso2 : (countryIso(country) || '');
-      addPlace({ name: state || country, continent:cont, country, iso2, state, date });
+      if (selVal){
+        const cm = matchWorldCity(selVal);
+        if (cm && cm.iso2 === iso2){
+          addPlace({ name: cm.zh || cm.en, continent: cont, country, iso2, province:null, city:cm.zh||cm.en, district:null, state:null, lat:cm.lat, lng:cm.lng, level:'city', date });
+        } else {
+          addPlace({ name: selVal, continent: cont, country, iso2, state: selVal, date });
+        }
+      } else {
+        addPlace({ name: country, continent: cont, country, iso2, date });
+      }
     }
     $('resolveChip').className = 'resolve-chip';
     $('resolveChip').innerHTML = '已添加 ✨';
@@ -1121,21 +1181,22 @@ function handleAdd(){
 
 /* ---------- 示例数据 ---------- */
 const SAMPLE = [
-  ['杭州','2023-03-15','亚洲','中国','CN','浙江省','杭州市',null,null],
-  ['上海','2023-05-20','亚洲','中国','CN','上海市','上海市',null,null],
-  ['北京','2023-09-01','亚洲','中国','CN','北京市','北京市',null,null],
-  ['东京','2023-11-10','亚洲','日本','JP',null,null,null,null],
-  ['曼谷','2024-02-14','亚洲','泰国','TH',null,null,null,null],
-  ['巴黎','2024-06-01','欧洲','法国','FR',null,null,null,null],
-  ['加利福尼亚','2024-09-20','北美洲','美国','US',null,null,null,'California'],
-  ['悉尼','2025-01-05','大洋洲','澳大利亚','AU',null,null,null,null],
+  ['杭州','2023-03-15','亚洲','中国','CN','浙江省','杭州市',null,null,null,null,null],
+  ['上海','2023-05-20','亚洲','中国','CN','上海市','上海市',null,null,null,null,null],
+  ['北京','2023-09-01','亚洲','中国','CN','北京市','北京市',null,null,null,null,null],
+  ['东京','2023-11-10','亚洲','日本','JP',null,'东京',null,null,35.687,139.7495,'city'],
+  ['曼谷','2024-02-14','亚洲','泰国','TH',null,'曼谷',null,null,13.7519,100.5147,'city'],
+  ['巴黎','2024-06-01','欧洲','法国','FR',null,'巴黎',null,null,48.8686,2.3314,'city'],
+  ['加利福尼亚','2024-09-20','北美洲','美国','US',null,null,null,'California',null,null,null],
+  ['悉尼','2025-01-05','大洋洲','澳大利亚','AU',null,'悉尼',null,null,-33.9181,151.1832,'city'],
 ];
 
 function loadSample(){
   places = SAMPLE.map((s, i) => ({
     id: 'sample-' + i,
     name: s[0], date: s[1], continent: s[2], country: s[3], iso2: s[4],
-    province: s[5] || null, city: s[6] || null, district: s[7] || null, state: s[8] || null
+    province: s[5] || null, city: s[6] || null, district: s[7] || null, state: s[8] || null,
+    lat: s[9] || null, lng: s[10] || null, level: s[11] || null
   }));
   persist();
   drillStack = [];
@@ -1149,6 +1210,7 @@ function updateSuggest(){
   COUNTRIES.forEach(c => names.add(c[0]));
   PROVINCES.forEach(p => { names.add(p[0]); p[2].forEach(c => names.add(c)); });
   if (world) world.features.forEach(f => { if (f.properties.nameZh) names.add(f.properties.nameZh); });
+  (window.CITIES || []).forEach(c => { if (c[3] !== 'CN' && c[7] > 500000) names.add(c[1]); });
   $('suggest').innerHTML = [...names].map(n => `<option value="${esc(n)}"></option>`).join('');
 }
 
@@ -1178,6 +1240,7 @@ $('selState').onchange = saveForm;
 /* ---------- 初始化 ---------- */
 (async function init(){
   loadStore();
+  buildCityIndex();
   fillDateSelects();
   updateCascadeVisibility();
   updateSuggest();
