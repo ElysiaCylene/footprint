@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>足迹地图 · 你去过的地方</title>
+<script src="https://registry.npmmirror.com/echarts/5.5.1/files/dist/echarts.min.js"></script>
+<script src="world.js"></script>
+<script src="admin1.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#ff6b5e; --accent2:#4f8cff; --ok:#34d399;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:radial-gradient(1200px 700px at 70% -10%, #1e293b 0%, var(--bg) 55%);
+    color:var(--text);display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+  header{padding:14px 22px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line);
+    background:rgba(15,23,42,.6);backdrop-filter:blur(8px);flex:0 0 auto;z-index:5;}
+  header .logo{font-size:22px;}
+  header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.5px;}
+  header .sub{font-size:12px;color:var(--muted);margin-top:2px;}
+  header .spacer{flex:1;}
+  .btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:8px 14px;
+    border-radius:10px;cursor:pointer;font-size:13px;transition:.15s;}
+  .btn:hover{border-color:var(--accent);color:#fff;}
+  .btn.primary{background:linear-gradient(135deg,#ff7a6e,#ff4d4f);border:none;color:#fff;font-weight:600;}
+  .btn.primary:hover{filter:brightness(1.08);}
+  .wrap{flex:1;display:flex;min-height:0;}
+  aside{width:360px;flex:0 0 360px;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;min-height:0;}
+  .form{padding:16px;border-bottom:1px solid var(--line);}
+  .form label{font-size:12px;color:var(--muted);display:block;margin:0 0 6px;}
+  .form .group-title{font-size:12px;color:var(--muted);margin:12px 0 6px;display:flex;align-items:center;gap:6px;}
+  .form .group-title::after{content:'';flex:1;height:1px;background:var(--line);}
+  .row{display:flex;gap:8px;margin-bottom:10px;}
+  .field{flex:1;min-width:0;}
+  input,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);font-size:14px;outline:none;}
+  input:focus,select:focus{border-color:var(--accent2);}
+  select{cursor:pointer;}
+  select option{background:var(--panel2);color:var(--text);}
+  select:disabled{opacity:.45;cursor:not-allowed;}
+  .resolve-chip{font-size:12px;color:var(--muted);min-height:16px;margin:6px 0 0;}
+  .resolve-chip b{color:var(--ok);}
+  .resolve-chip.err{color:#ffb4a8;}
+  .journey{flex:1;overflow-y:auto;padding:12px 16px;}
+  .journey .h{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:8px 2px 10px;
+    display:flex;justify-content:space-between;align-items:center;}
+  .month-sep{font-size:12px;color:var(--accent2);margin:14px 2px 8px;padding:5px 0 5px 10px;
+    border-left:3px solid var(--accent2);background:rgba(79,140,255,.08);border-radius:0 6px 6px 0;letter-spacing:.5px;}
+  .item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--panel2);
+    margin-bottom:8px;border:1px solid var(--line);animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+  .item .no{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;
+    align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto;}
+  .item .body{flex:1;min-width:0;}
+  .item .nm{font-size:14px;font-weight:600;}
+  .item .dt{font-size:12px;color:var(--muted);margin-top:2px;}
+  .item .hi{font-size:11px;color:var(--accent2);margin-top:3px;}
+  .item .del{border:none;background:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1;
+    padding:2px 6px;border-radius:6px;}
+  .item .del:hover{color:#ff6b6b;background:rgba(255,107,94,.12);}
+  .scope-bar{padding:12px 18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);flex:0 0 auto;}
+  .scope-bar b{color:var(--text);}
+  main{flex:1;position:relative;min-width:0;}
+  #map{position:absolute;inset:0;}
+  .empty-tip{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:10px;pointer-events:none;color:var(--muted);text-align:center;padding:20px;}
+  .empty-tip .big{font-size:40px;}
+  .empty-tip .t{font-size:16px;color:var(--text);font-weight:600;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111827;border:1px solid var(--line);
+    color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;z-index:99;opacity:0;transition:.3s;pointer-events:none;}
+  .toast.show{opacity:1;}
+  .map-ui{position:absolute;top:12px;left:12px;z-index:6;display:flex;flex-direction:column;gap:8px;
+    align-items:flex-start;pointer-events:none;}
+  .map-ui>*{pointer-events:auto;}
+  .breadcrumb{display:flex;align-items:center;gap:2px;background:rgba(15,23,42,.78);backdrop-filter:blur(6px);
+    border:1px solid var(--line);border-radius:10px;padding:5px 10px;font-size:13px;flex-wrap:wrap;max-width:460px;}
+  .breadcrumb .sep{color:var(--muted);padding:0 2px;}
+  .breadcrumb .crumb{color:var(--accent2);cursor:pointer;padding:2px 5px;border-radius:5px;white-space:nowrap;}
+  .breadcrumb .crumb:hover{background:rgba(79,140,255,.16);}
+  .breadcrumb .crumb.cur{color:#fff;font-weight:600;cursor:default;}
+  .hint{background:rgba(15,23,42,.6);border:1px solid var(--line);border-radius:10px;padding:5px 10px;font-size:12px;color:var(--muted);}
+  #backBtn{display:inline-flex;align-items:center;gap:4px;}
+  /* ---------- 移动端响应式 ---------- */
+  @media (max-width: 820px){
+    body{height:auto;min-height:100vh;overflow:auto;}
+    header{padding:10px 12px;gap:8px;flex-wrap:wrap;position:sticky;top:0;z-index:10;}
+    header .logo{font-size:18px;}
+    header h1{font-size:15px;}
+    header .sub{display:none;}
+    header .btn{padding:7px 11px;font-size:12px;}
+    .wrap{flex:none;display:flex;flex-direction:column;}
+    main{order:1;flex:none;height:52vh;min-height:340px;min-width:0;position:relative;}
+    aside{order:2;flex:none;width:100%;border-right:none;border-top:1px solid var(--line);}
+    .form{padding:10px 12px;}
+    .form label{font-size:11px;}
+    .row{flex-wrap:wrap;gap:6px;}
+    .field{flex:1 1 0;min-width:0;}
+    .journey{padding:10px 14px;}
+    .scope-bar{font-size:12px;padding:10px 14px;}
+    .map-ui{top:8px;left:8px;}
+    .map-ui .breadcrumb{max-width:calc(100vw - 70px);overflow-x:auto;flex-wrap:nowrap;font-size:12px;}
+    .map-ui .breadcrumb .sep{display:none;}
+    .hint{display:none;}
+    #backBtn{font-size:12px;padding:6px 10px;}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <span class="logo">🗺️</span>
+    <div>
+      <h1>足迹地图</h1>
+      <div class="sub">记录你去过的地方，按 区 → 市 → 省 → 国 → 州/省 → 洲 缩放，并按时间连线</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="sampleBtn">✨ 载入示例</button>
+    <button class="btn" id="clearBtn">🗑 清空</button>
+  </header>
+
+  <div class="wrap">
+    <aside>
+      <div class="form">
+        <label>快速输入（可自动识别 区/市/省/国）</label>
+        <div class="row"><div class="field">
+          <input id="nameInput" list="suggest" placeholder="如：杭州 / 西湖区 / 浙江省 / 日本" autocomplete="off" />
+        </div></div>
+        <datalist id="suggest"></datalist>
+
+        <div class="group-title">日期</div>
+        <div class="row">
+          <div class="field"><select id="yearSel"></select></div>
+          <div class="field"><select id="monthSel"></select></div>
+          <div class="field"><select id="daySel"></select></div>
+        </div>
+
+        <div class="group-title">精确选择（中国可到区县，国外可到州/省）</div>
+        <div class="row">
+          <div class="field"><select id="selCountry"></select></div>
+          <div class="field" id="provField"><select id="selProvince"></select></div>
+          <div class="field" id="stateField"><select id="selState"></select></div>
+        </div>
+        <div class="row">
+          <div class="field" id="cityField"><select id="selCity"></select></div>
+          <div class="field" id="distField"><select id="selDistrict"></select></div>
+        </div>
+
+        <button class="btn primary" id="addBtn" style="width:100%;">＋ 添加足迹</button>
+        <div class="resolve-chip" id="resolveChip"></div>
+      </div>
+
+      <div class="journey" id="journey"></div>
+      <div class="scope-bar" id="scopeBar">还没有记录，先添加一个地方吧 👣</div>
+    </aside>
+
+    <main>
+      <div id="map"></div>
+      <div class="map-ui">
+        <button class="btn" id="backBtn" style="display:none;">← 返回上一级</button>
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <div class="hint">滚轮缩放 · 拖拽平移 · 点击区域下钻查看细节</div>
+      </div>
+      <div class="empty-tip" id="emptyTip">
+        <div class="big">🌍</div>
+        <div class="t">从左侧添加你到过的地方</div>
+        <div>输入地点或逐级选择，地图会自动判断层级并按时间连线</div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+ * 足迹地图 · 单文件应用
+ * 层级：区 → 市 → 省 → 国 → 州/省 → 洲 → 世界
+ * ============================================================ */
+
+/* ---------- 工具 ---------- */
+const $ = id => document.getElementById(id);
+const uniq = arr => [...new Set(arr)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function normName(name){
+  return String(name || '')
+    .replace(/特别行政区$/,'').replace(/维吾尔自治区$/,'').replace(/壮族自治区$/,'')
+    .replace(/回族自治区$/,'').replace(/自治区$/,'').replace(/省$/,'').replace(/市$/,'')
+    .trim();
+}
+
+/* ---------- 中国省份 / 城市数据 ---------- */
+const MUNICIPALITIES = ['北京市','天津市','上海市','重庆市'];
+
+const PROVINCES = [
+  ['北京市',110000,['北京市']],
+  ['天津市',120000,['天津市']],
+  ['河北省',130000,['石家庄市','唐山市','秦皇岛市','邯郸市','邢台市','保定市','张家口市','承德市','沧州市','廊坊市','衡水市']],
+  ['山西省',140000,['太原市','大同市','阳泉市','长治市','晋城市','朔州市','晋中市','运城市','忻州市','临汾市','吕梁市']],
+  ['内蒙古自治区',150000,['呼和浩特市','包头市','乌海市','赤峰市','通辽市','鄂尔多斯市','呼伦贝尔市','巴彦淖尔市','乌兰察布市']],
+  ['辽宁省',210000,['沈阳市','大连市','鞍山市','抚顺市','本溪市','丹东市','锦州市','营口市','阜新市','辽阳市','盘锦市','铁岭市','朝阳市','葫芦岛市']],
+  ['吉林省',220000,['长春市','吉林市','四平市','辽源市','通化市','白山市','松原市','白城市','延边朝鲜族自治州']],
+  ['黑龙江省',230000,['哈尔滨市','齐齐哈尔市','鸡西市','鹤岗市','双鸭山市','大庆市','伊春市','佳木斯市','七台河市','牡丹江市','黑河市','绥化市','大兴安岭地区']],
+  ['上海市',310000,['上海市']],
+  ['江苏省',320000,['南京市','无锡市','徐州市','常州市','苏州市','南通市','连云港市','淮安市','盐城市','扬州市','镇江市','泰州市','宿迁市']],
+  ['浙江省',330000,['杭州市','宁波市','温州市','嘉兴市','湖州市','绍兴市','金华市','衢州市','舟山市','台州市','丽水市']],
+  ['安徽省',340000,['合肥市','芜湖市','蚌埠市','淮南市','马鞍山市','淮北市','铜陵市','安庆市','黄山市','滁州市','阜阳市','宿州市','六安市','亳州市','池州市','宣城市']],
+  ['福建省',350000,['福州市','厦门市','莆田市','三明市','泉州市','漳州市','南平市','龙岩市','宁德市']],
+  ['江西省',360000,['南昌市','景德镇市','萍乡市','九江市','新余市','鹰潭市','赣州市','吉安市','宜春市','抚州市','上饶市']],
+  ['山东省',370000,['济南市','青岛市','淄博市','枣庄市','东营市','烟台市','潍坊市','济宁市','泰安市','威海市','日照市','临沂市','德州市','聊城市','滨州市','菏泽市']],
+  ['河南省',410000,['郑州市','开封市','洛阳市','平顶山市','安阳市','鹤壁市','新乡市','焦作市','濮阳市','许昌市','漯河市','三门峡市','南阳市','商丘市','信阳市','周口市','驻马店市']],
+  ['湖北省',420000,['武汉市','黄石市','十堰市','宜昌市','襄阳市','鄂州市','荆门市','孝感市','荆州市','黄冈市','咸宁市','随州市','恩施土家族苗族自治州']],
+  ['湖南省',430000,['长沙市','株洲市','湘潭市','衡阳市','邵阳市','岳阳市','常德市','张家界市','益阳市','郴州市','永州市','怀化市','娄底市','湘西土家族苗族自治州']],
+  ['广东省',440000,['广州市','韶关市','深圳市','珠海市','汕头市','佛山市','江门市','湛江市','茂名市','肇庆市','惠州市','梅州市','汕尾市','河源市','阳江市','清远市','东莞市','中山市','潮州市','揭阳市','云浮市']],
+  ['广西壮族自治区',450000,['南宁市','柳州市','桂林市','梧州市','北海市','防城港市','钦州市','贵港市','玉林市','百色市','贺州市','河池市','来宾市','崇左市']],
+  ['海南省',460000,['海口市','三亚市','三沙市','儋州市']],
+  ['重庆市',500000,['重庆市']],
+  ['四川省',510000,['成都市','自贡市','攀枝花市','泸州市','德阳市','绵阳市','广元市','遂宁市','内江市','乐山市','南充市','眉山市','宜宾市','广安市','达州市','雅安市','巴中市','资阳市','阿坝藏族羌族自治州','甘孜藏族自治州','凉山彝族自治州']],
+  ['贵州省',520000,['贵阳市','六盘水市','遵义市','安顺市','毕节市','铜仁市','黔西南布依族苗族自治州','黔东南苗族侗族自治州','黔南布依族苗族自治州']],
+  ['云南省',530000,['昆明市','曲靖市','玉溪市','保山市','昭通市','丽江市','普洱市','临沧市','楚雄彝族自治州','红河哈尼族彝族自治州','文山壮族苗族自治州','西双版纳傣族自治州','大理白族自治州','德宏傣族景颇族自治州','怒江傈僳族自治州','迪庆藏族自治州']],
+  ['西藏自治区',540000,['拉萨市','日喀则市','昌都市','林芝市','山南市','那曲市','阿里地区']],
+  ['陕西省',610000,['西安市','铜川市','宝鸡市','咸阳市','渭南市','延安市','汉中市','榆林市','安康市','商洛市']],
+  ['甘肃省',620000,['兰州市','嘉峪关市','金昌市','白银市','天水市','武威市','张掖市','平凉市','酒泉市','庆阳市','定西市','陇南市','临夏回族自治州','甘南藏族自治州']],
+  ['青海省',630000,['西宁市','海东市','海北藏族自治州','黄南藏族自治州','海南藏族自治州','果洛藏族自治州','玉树藏族自治州','海西蒙古族藏族自治州']],
+  ['宁夏回族自治区',640000,['银川市','石嘴山市','吴忠市','固原市','中卫市']],
+  ['新疆维吾尔自治区',650000,['乌鲁木齐市','克拉玛依市','吐鲁番市','哈密市','昌吉回族自治州','博尔塔拉蒙古自治州','巴音郭楞蒙古自治州','阿克苏地区','克孜勒苏柯尔克孜自治州','喀什地区','和田地区','伊犁哈萨克自治州','塔城地区','阿勒泰地区']],
+  ['台湾省',710000,['台北市','高雄市','台中市','台南市','新北市','桃园市','基隆市','新竹市','嘉义市','花莲县','台东县','屏东县','彰化县','南投县','云林县','苗栗县','宜兰县','澎湖县']],
+  ['香港特别行政区',810000,['香港特别行政区']],
+  ['澳门特别行政区',820000,['澳门特别行政区']],
+];
+
+const cityIndex = new Map();
+const provinceByName = new Map();
+const provinceByNorm = new Map();
+for (const [pname, adcode, cities] of PROVINCES){
+  provinceByName.set(pname, { name:pname, adcode, cities });
+  provinceByNorm.set(normName(pname), pname);
+  for (const c of cities){
+    cityIndex.set(normName(c), { city:c, province:pname });
+  }
+}
+const PROV_ALIAS = {
+  '内蒙古':'内蒙古自治区','广西':'广西壮族自治区','宁夏':'宁夏回族自治区','西藏':'西藏自治区',
+  '新疆':'新疆维吾尔自治区','香港':'香港特别行政区','澳门':'澳门特别行政区','台湾':'台湾省'
+};
+
+/* ---------- 国家 / 洲 数据 ---------- */
+const COUNTRIES = [
+  ['中国','CN','亚洲'],['日本','JP','亚洲'],['韩国','KR','亚洲'],['朝鲜','KP','亚洲'],['蒙古','MN','亚洲'],
+  ['印度','IN','亚洲'],['巴基斯坦','PK','亚洲'],['孟加拉国','BD','亚洲'],['斯里兰卡','LK','亚洲'],['尼泊尔','NP','亚洲'],
+  ['不丹','BT','亚洲'],['马尔代夫','MV','亚洲'],['缅甸','MM','亚洲'],['泰国','TH','亚洲'],['老挝','LA','亚洲'],
+  ['柬埔寨','KH','亚洲'],['越南','VN','亚洲'],['马来西亚','MY','亚洲'],['新加坡','SG','亚洲'],['印度尼西亚','ID','亚洲'],
+  ['文莱','BN','亚洲'],['菲律宾','PH','亚洲'],['东帝汶','TL','亚洲'],['阿富汗','AF','亚洲'],['哈萨克斯坦','KZ','亚洲'],
+  ['乌兹别克斯坦','UZ','亚洲'],['土库曼斯坦','TM','亚洲'],['吉尔吉斯斯坦','KG','亚洲'],['塔吉克斯坦','TJ','亚洲'],
+  ['伊朗','IR','亚洲'],['伊拉克','IQ','亚洲'],['叙利亚','SY','亚洲'],['黎巴嫩','LB','亚洲'],['以色列','IL','亚洲'],
+  ['约旦','JO','亚洲'],['沙特阿拉伯','SA','亚洲'],['也门','YE','亚洲'],['阿曼','OM','亚洲'],['阿联酋','AE','亚洲'],
+  ['卡塔尔','QA','亚洲'],['科威特','KW','亚洲'],['巴林','BH','亚洲'],['土耳其','TR','亚洲'],['格鲁吉亚','GE','亚洲'],
+  ['亚美尼亚','AM','亚洲'],['阿塞拜疆','AZ','亚洲'],['塞浦路斯','CY','亚洲'],
+  ['俄罗斯','RU','欧洲'],['英国','GB','欧洲'],['法国','FR','欧洲'],['德国','DE','欧洲'],['意大利','IT','欧洲'],
+  ['西班牙','ES','欧洲'],['葡萄牙','PT','欧洲'],['荷兰','NL','欧洲'],['比利时','BE','欧洲'],['卢森堡','LU','欧洲'],
+  ['瑞士','CH','欧洲'],['奥地利','AT','欧洲'],['爱尔兰','IE','欧洲'],['冰岛','IS','欧洲'],['挪威','NO','欧洲'],
+  ['瑞典','SE','欧洲'],['芬兰','FI','欧洲'],['丹麦','DK','欧洲'],['希腊','GR','欧洲'],['波兰','PL','欧洲'],
+  ['捷克','CZ','欧洲'],['斯洛伐克','SK','欧洲'],['匈牙利','HU','欧洲'],['罗马尼亚','RO','欧洲'],['保加利亚','BG','欧洲'],
+  ['塞尔维亚','RS','欧洲'],['克罗地亚','HR','欧洲'],['斯洛文尼亚','SI','欧洲'],['波黑','BA','欧洲'],['黑山','ME','欧洲'],
+  ['北马其顿','MK','欧洲'],['阿尔巴尼亚','AL','欧洲'],['白俄罗斯','BY','欧洲'],['乌克兰','UA','欧洲'],['立陶宛','LT','欧洲'],
+  ['拉脱维亚','LV','欧洲'],['爱沙尼亚','EE','欧洲'],['摩尔多瓦','MD','欧洲'],['马耳他','MT','欧洲'],
+  ['埃及','EG','非洲'],['利比亚','LY','非洲'],['突尼斯','TN','非洲'],['阿尔及利亚','DZ','非洲'],['摩洛哥','MA','非洲'],
+  ['苏丹','SD','非洲'],['埃塞俄比亚','ET','非洲'],['肯尼亚','KE','非洲'],['坦桑尼亚','TZ','非洲'],['乌干达','UG','非洲'],
+  ['卢旺达','RW','非洲'],['尼日利亚','NG','非洲'],['加纳','GH','非洲'],['塞内加尔','SN','非洲'],['科特迪瓦','CI','非洲'],
+  ['喀麦隆','CM','非洲'],['安哥拉','AO','非洲'],['赞比亚','ZM','非洲'],['津巴布韦','ZW','非洲'],['莫桑比克','MZ','非洲'],
+  ['南非','ZA','非洲'],['马达加斯加','MG','非洲'],['刚果民主共和国','CD','非洲'],['刚果共和国','CG','非洲'],
+  ['美国','US','北美洲'],['加拿大','CA','北美洲'],['墨西哥','MX','北美洲'],['古巴','CU','北美洲'],['危地马拉','GT','北美洲'],
+  ['洪都拉斯','HN','北美洲'],['萨尔瓦多','SV','北美洲'],['尼加拉瓜','NI','北美洲'],['哥斯达黎加','CR','北美洲'],
+  ['巴拿马','PA','北美洲'],['牙买加','JM','北美洲'],['多米尼加','DO','北美洲'],['海地','HT','北美洲'],
+  ['巴西','BR','南美洲'],['阿根廷','AR','南美洲'],['智利','CL','南美洲'],['秘鲁','PE','南美洲'],['哥伦比亚','CO','南美洲'],
+  ['委内瑞拉','VE','南美洲'],['厄瓜多尔','EC','南美洲'],['玻利维亚','BO','南美洲'],['巴拉圭','PY','南美洲'],
+  ['乌拉圭','UY','南美洲'],['圭亚那','GY','南美洲'],['苏里南','SR','南美洲'],
+  ['澳大利亚','AU','大洋洲'],['新西兰','NZ','大洋洲'],['巴布亚新几内亚','PG','大洋洲'],['斐济','FJ','大洋洲'],
+];
+const countryByCn = new Map(COUNTRIES.map(c => [c[0], {cn:c[0], iso2:c[1], continent:c[2]}]));
+const countryByIso = new Map(COUNTRIES.map(c => [c[1], {cn:c[0], iso2:c[1], continent:c[2]}]));
+
+const CONTINENT_ZH = {
+  'Asia':'亚洲','Europe':'欧洲','Africa':'非洲','North America':'北美洲',
+  'South America':'南美洲','Oceania':'大洋洲','Antarctica':'南极洲','Seven seas (open ocean)':'海洋'
+};
+const CONTINENT_CENTER = {
+  '亚洲':[95,40],'欧洲':[15,50],'非洲':[20,5],'北美洲':[-100,45],'南美洲':[-60,-20],'大洋洲':[135,-25],'南极洲':[0,-80]
+};
+const CONTINENT_COLOR = {
+  '亚洲':'#5470c6','欧洲':'#91cc75','非洲':'#fac858','北美洲':'#ee6666','南美洲':'#73c0de','大洋洲':'#3ba272','南极洲':'#9a60b4'
+};
+
+/* ---------- 地图数据源 ---------- */
+const URL_CHINA = 'https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json';
+const URL_PROVINCE = adcode => `https://geo.datav.aliyun.com/areas_v3/bound/${adcode}_full.json`;
+// 世界地图 & 全球州/省边界：已本地化为 world.js / admin1.js（避免 jsdelivr 国内不稳定）。
+// 州/省数据为 Natural Earth 50m admin_1，覆盖美/俄/印/巴/加/澳/印尼/南非等 8 个大国 + 中国，自带中文名 name_zh。
+
+/* ---------- 状态 ---------- */
+const STORE_KEY = 'footprint_places_v1';
+const FORM_KEY = 'footprint_form_v1';
+let places = [];
+let drillStack = [];
+let world = null;
+let china = null;
+let admin1 = null;
+const worldByName = new Map();
+const worldByIso = new Map();
+const admin1ByIso = new Map();
+
+const chart = echarts.init($('map'));
+
+/* ---------- GeoJSON 处理 ---------- */
+function fetchJSON(url){
+  return fetch(url).then(r => { if(!r.ok) throw new Error(r.status); return r.json(); });
+}
+function normalizeWorld(gj){
+  gj.features = (gj.features || []).filter(f => f.geometry && f.geometry.type);
+  for (const f of gj.features){
+    const p = f.properties || {};
+    f.properties.name = p.ADMIN || p.NAME || p.name || '';
+    f.properties.iso2 = p.ISO_A2 || p.iso_a2 || '';
+    f.properties.nameZh = p.NAME_ZH || '';
+    f.properties.continentEn = p.CONTINENT || '';
+  }
+  return gj;
+}
+function buildWorldIndex(gj){
+  worldByName.clear(); worldByIso.clear();
+  for (const f of gj.features){
+    const p = f.properties;
+    if (p.iso2) worldByIso.set(p.iso2, f);
+    if (p.name) worldByName.set(p.name.toLowerCase(), f);
+    if (p.nameZh){ worldByName.set(p.nameZh.toLowerCase(), f); worldByName.set(p.nameZh, f); }
+  }
+}
+function featureCentroid(geom){
+  if (!geom) return null;
+  const type = geom.type;
+  let best = null, bestArea = -1;
+  const ringCentroid = ring => {
+    let a=0,cx=0,cy=0;
+    for (let i=0;i<ring.length;i++){
+      const j=(i+1)%ring.length;
+      const x=ring[i][0], y=ring[i][1], x2=ring[j][0], y2=ring[j][1];
+      const cr = x*y2 - x2*y; a += cr; cx += (x+x2)*cr; cy += (y+y2)*cr;
+    }
+    a /= 2;
+    if (Math.abs(a) < 1e-9){
+      const n = ring.length || 1;
+      return [ring.reduce((s,p)=>s+p[0],0)/n, ring.reduce((s,p)=>s+p[1],0)/n];
+    }
+    return [cx/(6*a), cy/(6*a)];
+  };
+  const ringArea = ring => { let a=0; for (let i=0;i<ring.length;i++){const j=(i+1)%ring.length;a+=ring[i][0]*ring[j][1]-ring[j][0]*ring[i][1];} return Math.abs(a/2); };
+  const consider = ring => { const a=ringArea(ring); if (a>bestArea){ bestArea=a; best=ringCentroid(ring);} };
+  if (type === 'Polygon'){ (geom.coordinates||[]).forEach((ring,i)=>{ if(i===0) consider(ring); }); }
+  else if (type === 'MultiPolygon'){ (geom.coordinates||[]).forEach(poly => { if (poly && poly[0]) consider(poly[0]); }); }
+  else if (type === 'Point'){ return geom.coordinates; }
+  return best;
+}
+function geoBBox(features){
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  const walk = c => { if (typeof c[0] === 'number'){ minX=Math.min(minX,c[0]); maxX=Math.max(maxX,c[0]); minY=Math.min(minY,c[1]); maxY=Math.max(maxY,c[1]); } else c.forEach(walk); };
+  features.forEach(f => f.geometry && f.geometry.coordinates && walk(f.geometry.coordinates));
+  if (minX === Infinity) return null;
+  return {minX,minY,maxX,maxY};
+}
+
+/* ---------- 地点解析 ---------- */
+function resolvePlaceName(raw){
+  const name = (raw || '').trim();
+  if (!name) return null;
+  const ck = normName(name);
+  if (cityIndex.has(ck)){
+    const m = cityIndex.get(ck);
+    return { name, continent:'亚洲', country:'中国', iso2:'CN', province:m.province, city:m.city, district:null };
+  }
+  let pn = provinceByNorm.get(ck);
+  if (!pn && PROV_ALIAS[ck]) pn = PROV_ALIAS[ck];
+  if (pn){
+    const isMun = MUNICIPALITIES.includes(pn);
+    return { name, continent:'亚洲', country:'中国', iso2:'CN', province:pn, city: isMun ? pn : null, district:null };
+  }
+  if (countryByCn.has(name)) return { name, continent:countryByCn.get(name).continent, country:name, iso2:countryByCn.get(name).iso2 };
+  if (worldByName.has(name.toLowerCase())){
+    const f = worldByName.get(name.toLowerCase());
+    const p = f.properties;
+    const continent = CONTINENT_ZH[p.continentEn] || '其他';
+    const cn = p.nameZh || p.name || name;
+    return { name, continent, country:cn, iso2:p.iso2 || '' };
+  }
+  return null;
+}
+
+/* ---------- 范围判定 ---------- */
+function resolveScope(list){
+  if (!list.length) return { mode:'empty' };
+  const conts = uniq(list.map(p => p.continent).filter(Boolean));
+  const countries = uniq(list.map(p => p.country).filter(Boolean));
+  if (conts.length > 1) return { mode:'world' };
+  if (countries.length > 1) return { mode:'continent', continent:conts[0] };
+  const country = countries[0] || '中国';
+  if (country !== '中国') return { mode:'country', country };
+  const provs = uniq(list.map(p => p.province).filter(Boolean));
+  if (provs.length === 0) return { mode:'china' };
+  if (provs.length > 1) return { mode:'china' };
+  const province = provs[0];
+  const cities = uniq(list.map(p => p.city).filter(Boolean));
+  const districts = uniq(list.map(p => p.district).filter(Boolean));
+  if (districts.length === 1) return { mode:'district', province, city:cities[0], district:districts[0] };
+  if (cities.length === 1) return { mode:'city', province, city:cities[0] };
+  return { mode:'province', province };
+}
+
+/* ---------- 视图 / 下钻 ---------- */
+function viewFromScope(scope){
+  switch(scope.mode){
+    case 'world': return { level:'world' };
+    case 'continent': return { level:'continent', continent:scope.continent };
+    case 'country': return { level:'country', country:scope.country };
+    case 'china': return { level:'country', country:'中国' };
+    case 'province': return { level:'province', province:scope.province };
+    case 'city': return { level:'city', province:scope.province, city:scope.city };
+    case 'district': return { level:'district', province:scope.province, city:scope.city, district:scope.district };
+    case 'state': return { level:'state', country:scope.country, state:scope.state };
+    default: return { level:'world' };
+  }
+}
+function scopeFromView(view){
+  switch(view.level){
+    case 'world': return { mode:'world' };
+    case 'continent': return { mode:'continent', continent:view.continent };
+    case 'country': return view.country === '中国' ? { mode:'china' } : { mode:'country', country:view.country };
+    case 'province': return { mode:'province', province:view.province };
+    case 'city': return { mode:'city', province:view.province, city:view.city };
+    case 'district': return { mode:'district', province:view.province, city:view.city, district:view.district };
+    case 'state': return { mode:'state', country:view.country, state:view.state };
+    default: return { mode:'world' };
+  }
+}
+function continentOfCountry(country){
+  if (country === '中国') return '亚洲';
+  const hit = countryByCn.get(country);
+  if (hit) return hit.continent;
+  const f = worldByName.get((country || '').toLowerCase());
+  return f ? (CONTINENT_ZH[f.properties.continentEn] || null) : null;
+}
+function ancestorChain(view){
+  if (!view) return [{ level:'world' }];
+  if (view.level === 'world') return [{ level:'world' }];
+  if (view.level === 'continent') return [{ level:'world' }, { level:'continent', continent:view.continent }];
+  if (view.level === 'country'){
+    const chain = [{ level:'world' }];
+    const cont = continentOfCountry(view.country);
+    if (cont) chain.push({ level:'continent', continent:cont });
+    chain.push({ level:'country', country:view.country });
+    return chain;
+  }
+  if (view.level === 'state'){
+    const chain = [{ level:'world' }];
+    const cont = continentOfCountry(view.country);
+    if (cont) chain.push({ level:'continent', continent:cont });
+    chain.push({ level:'country', country:view.country });
+    chain.push({ level:'state', country:view.country, state:view.state });
+    return chain;
+  }
+  if (view.level === 'province'){
+    return [{ level:'world' }, { level:'continent', continent:'亚洲' }, { level:'country', country:'中国' }, { level:'province', province:view.province }];
+  }
+  if (view.level === 'city'){
+    return [{ level:'world' }, { level:'continent', continent:'亚洲' }, { level:'country', country:'中国' }, { level:'province', province:view.province }, { level:'city', province:view.province, city:view.city }];
+  }
+  if (view.level === 'district'){
+    return [{ level:'world' }, { level:'continent', continent:'亚洲' }, { level:'country', country:'中国' }, { level:'province', province:view.province }, { level:'city', province:view.province, city:view.city }, { level:'district', province:view.province, city:view.city, district:view.district }];
+  }
+  return [{ level:'world' }];
+}
+function viewLabel(view){
+  switch(view.level){
+    case 'world': return '世界';
+    case 'continent': return view.continent;
+    case 'country': return view.country;
+    case 'state': return view.state;
+    case 'province': return view.province;
+    case 'city': return view.city;
+    case 'district': return view.district;
+  }
+  return '';
+}
+function effectiveView(){
+  if (drillStack.length) return drillStack[drillStack.length - 1];
+  return viewFromScope(resolveScope(places));
+}
+function countryFeatureName(country){
+  const f = worldByIso.get(country) || worldByName.get((country || '').toLowerCase());
+  return f ? f.properties.name : country;
+}
+function countryIso(country){
+  if (country === '中国') return 'CN';
+  const hit = countryByCn.get(country);
+  if (hit) return hit.iso2;
+  const f = worldByName.get((country || '').toLowerCase());
+  return f ? f.properties.iso2 : null;
+}
+
+/* ---------- 地图加载（带缓存） ---------- */
+const mapCache = new Map();
+async function getMap(name, loader, normalizer){
+  if (mapCache.has(name)) return mapCache.get(name);
+  let gj = await loader();
+  if (normalizer) gj = normalizer(gj);
+  mapCache.set(name, gj);
+  echarts.registerMap(name, gj);
+  return gj;
+}
+function loadWorld(){
+  const gj = window.WORLD_GEOJSON;
+  world = normalizeWorld(gj);
+  buildWorldIndex(world);
+  return world;
+}
+async function loadChina(){
+  china = await fetchJSON(URL_CHINA);
+  return china;
+}
+function worldFeaturesByContinent(continentZh){
+  const en = Object.keys(CONTINENT_ZH).find(k => CONTINENT_ZH[k] === continentZh);
+  return world.features.filter(f => f.properties.continentEn === en);
+}
+function stateDisplayName(f){
+  const p = f.properties || {};
+  return p.name_zh || p.NAME_ZH || p.nameZh || p.name || '';
+}
+function ensureAdmin1(){
+  if (admin1) return admin1;
+  admin1 = window.ADMIN1_GEOJSON;
+  admin1.features = (admin1.features || []).filter(f => f.geometry && f.geometry.type);
+  admin1ByIso.clear();
+  for (const f of admin1.features){
+    const p = f.properties || {};
+    const iso = p.iso_a2 || p.ISO_A2 || '';
+    if (iso && iso !== '-99' && iso !== '-1'){
+      if (!admin1ByIso.has(iso)) admin1ByIso.set(iso, []);
+      admin1ByIso.get(iso).push(f);
+    }
+  }
+  return admin1;
+}
+async function getStateMap(country){
+  const iso = countryIso(country);
+  const name = 'state:' + iso;
+  if (mapCache.has(name)) return mapCache.get(name);
+  await ensureAdmin1();
+  const feats = (admin1ByIso.get(iso) || []).map(f => {
+    const c = JSON.parse(JSON.stringify(f));
+    const dn = stateDisplayName(c);
+    if (dn) c.properties.name = dn;
+    return c;
+  });
+  const gj = { type:'FeatureCollection', features: feats };
+  mapCache.set(name, gj);
+  echarts.registerMap(name, gj);
+  return gj;
+}
+
+async function prepareMap(scope){
+  if (scope.mode === 'empty') return { name:'world-pending', center:null, zoom:null };
+  if (scope.mode === 'world'){
+    await getMap('world', loadWorld, null);
+    return { name:'world', center:null, zoom:null };
+  }
+  if (scope.mode === 'continent'){
+    const name = 'continent:' + scope.continent;
+    await getMap(name, async () => {
+      const w = await getMap('world', loadWorld, null);
+      return { type:'FeatureCollection', features: worldFeaturesByContinent(scope.continent) };
+    }, null);
+    return { name, center:null, zoom:null };
+  }
+  if (scope.mode === 'country'){
+    const iso = countryIso(scope.country);
+    if (iso){
+      try {
+        await ensureAdmin1();
+        const feats = admin1ByIso.get(iso);
+        if (feats && feats.length){
+          await getStateMap(scope.country);
+          return { name:'state:' + iso, center:null, zoom:1.2 };
+        }
+      } catch(e){ /* 州数据失败则回退世界图 */ }
+    }
+    await getMap('world', loadWorld, null);
+    const f = (worldByName.get(scope.country.toLowerCase()) || worldByIso.get(scope.country));
+    const c = f ? featureCentroid(f.geometry) : null;
+    const bb = f ? geoBBox([f]) : null;
+    let zoom = 4;
+    if (bb){
+      const w = Math.max(bb.maxX - bb.minX, 1e-6), h = Math.max(bb.maxY - bb.minY, 1e-6);
+      zoom = Math.max(2, Math.min(14, 160 / Math.max(w, h*1.7)));
+    }
+    return { name:'world', center:c, zoom };
+  }
+  if (scope.mode === 'state'){
+    await getStateMap(scope.country);
+    const iso = countryIso(scope.country);
+    const feats = admin1ByIso.get(iso) || [];
+    const sf = feats.find(x => x.properties.name === scope.state || stateDisplayName(x) === scope.state);
+    const c = sf ? featureCentroid(sf.geometry) : null;
+    const bb = sf ? geoBBox([sf]) : null;
+    let zoom = 2;
+    if (bb){
+      const w = Math.max(bb.maxX - bb.minX, 1e-6), h = Math.max(bb.maxY - bb.minY, 1e-6);
+      zoom = Math.max(2, Math.min(12, 160 / Math.max(w, h*1.7)));
+    }
+    return { name:'state:' + iso, center:c, zoom };
+  }
+  if (scope.mode === 'china'){
+    await getMap('china', loadChina, null);
+    return { name:'china', center:null, zoom:null };
+  }
+  if (scope.mode === 'province'){
+    const p = provinceByName.get(scope.province);
+    await getMap('province:' + scope.province, () => fetchJSON(URL_PROVINCE(p.adcode)), null);
+    return { name:'province:' + scope.province, center:null, zoom:null };
+  }
+  if (scope.mode === 'city' || scope.mode === 'district'){
+    const p = provinceByName.get(scope.province);
+    if (MUNICIPALITIES.includes(scope.province)){
+      await getMap('province:' + scope.province, () => fetchJSON(URL_PROVINCE(p.adcode)), null);
+      return { name:'province:' + scope.province, center:null, zoom:null };
+    }
+    const pgj = await getMap('province:' + scope.province, () => fetchJSON(URL_PROVINCE(p.adcode)), null);
+    const cf = pgj.features.find(f => (f.properties.name||'').replace(/市$/,'') === scope.city.replace(/市$/,'') || f.properties.name === scope.city);
+    const adcode = cf && cf.properties.adcode;
+    if (adcode){
+      await getMap('city:' + scope.city, () => fetchJSON(URL_PROVINCE(adcode)), null);
+      return { name:'city:' + scope.city, center:null, zoom:null };
+    }
+    return { name:'province:' + scope.province, center:null, zoom:null };
+  }
+  return { name:'world-pending', center:null, zoom:null };
+}
+
+/* ---------- 区域点 ---------- */
+function statePointOf(p, country){
+  const iso = countryIso(country);
+  const feats = admin1ByIso.get(iso) || [];
+  const f = feats.find(x => x.properties.name === p.state || stateDisplayName(x) === p.state);
+  const key = f ? stateDisplayName(f) : (p.state || p.country);
+  return { key, label: p.state || p.country, coords: f ? featureCentroid(f.geometry) : null };
+}
+function countryPoint(p){
+  const iso = p.iso2 || '';
+  const f = worldByIso.get(iso) || worldByName.get((p.country||'').toLowerCase());
+  const cn = p.country || p.name;
+  const coords = f ? featureCentroid(f.geometry) : null;
+  return { key: f ? f.properties.name : cn, label: cn, coords };
+}
+function regionOf(p, scope){
+  if (scope.mode === 'world') return { key:p.continent, label:p.continent, coords:CONTINENT_CENTER[p.continent] || null };
+  if (scope.mode === 'continent') return countryPoint(p);
+  if (scope.mode === 'country'){
+    if (p.country !== '中国' && p.state) return statePointOf(p, p.country);
+    return countryPoint(p);
+  }
+  if (scope.mode === 'state') return statePointOf(p, scope.country);
+  if (scope.mode === 'china') return { key:p.province, label:p.province, coords: provinceCenter(p.province) };
+  if (scope.mode === 'province') return { key:p.city || p.province, label:p.city || p.province, coords: cityCenter(p.province, p.city) };
+  if (scope.mode === 'city' || scope.mode === 'district'){
+    if (p.district) return { key:p.district, label:p.district, coords: districtCenter(p.province, p.city, p.district) };
+    const coords = MUNICIPALITIES.includes(p.province) ? provinceCenter(p.province) : cityCenter(p.province, p.city);
+    return { key:p.city || p.province, label:p.city || p.province, coords };
+  }
+  return { key:p.name, label:p.name, coords:null };
+}
+function provinceCenter(province){
+  if (!china) return null;
+  const f = china.features.find(x => x.properties.name === province);
+  if (f && f.properties.center) return f.properties.center;
+  if (f && f.properties.centroid) return f.properties.centroid;
+  return f ? featureCentroid(f.geometry) : null;
+}
+function cityCenter(province, city){
+  const gj = mapCache.get('province:' + province);
+  if (!gj) return null;
+  const f = gj.features.find(x => x.properties.name === city);
+  if (f && f.properties.center) return f.properties.center;
+  if (f && f.properties.centroid) return f.properties.centroid;
+  return f ? featureCentroid(f.geometry) : null;
+}
+function districtCenter(province, city, district){
+  let gj = null;
+  if (MUNICIPALITIES.includes(province)) gj = mapCache.get('province:' + province);
+  else gj = mapCache.get('city:' + city);
+  if (!gj) return null;
+  const f = gj.features.find(x => x.properties.name === district);
+  if (f && f.properties.center) return f.properties.center;
+  if (f && f.properties.centroid) return f.properties.centroid;
+  return f ? featureCentroid(f.geometry) : null;
+}
+async function getCityDistricts(province, city){
+  const p = provinceByName.get(province);
+  if (!p) return [];
+  if (MUNICIPALITIES.includes(province)){
+    const gj = await getMap('province:' + province, () => fetchJSON(URL_PROVINCE(p.adcode)), null);
+    return gj.features.map(f => f.properties.name).filter(Boolean);
+  }
+  const pgj = await getMap('province:' + province, () => fetchJSON(URL_PROVINCE(p.adcode)), null);
+  const cf = pgj.features.find(f => (f.properties.name||'').replace(/市$/,'') === city.replace(/市$/,'') || f.properties.name === city);
+  if (!cf || !cf.properties.adcode) return [];
+  const gj = await getMap('city:' + city, () => fetchJSON(URL_PROVINCE(cf.properties.adcode)), null);
+  return gj.features.map(f => f.properties.name).filter(Boolean);
+}
+
+/* ---------- 序列 / 连线 ---------- */
+function buildSequence(list, scope){
+  const sorted = [...list].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+  const seq = [];
+  let order = 0;
+  let lastKey = null;
+  for (const p of sorted){
+    const r = regionOf(p, scope);
+    order++;
+    if (r.key && r.key !== lastKey){
+      seq.push({ key:r.key, label:r.label, coords:r.coords, order, date:p.date });
+      lastKey = r.key;
+    }
+  }
+  return seq;
+}
+
+/* ---------- 渲染 ---------- */
+function draw(scope, mapInfo, seq){
+  const visited = uniq(seq.map(s => s.key));
+  let regions = [];
+  if (scope.mode === 'world'){
+    const conts = uniq(seq.map(s => s.label));
+    for (const f of world.features){
+      const zh = CONTINENT_ZH[f.properties.continentEn];
+      if (zh && conts.includes(zh)){
+        regions.push({ name:f.properties.name, itemStyle:{ areaColor: hexA(CONTINENT_COLOR[zh]||'#888', 0.35), borderColor:'#ffffff40' } });
+      }
+    }
+  } else {
+    regions = visited.map(name => ({
+      name,
+      itemStyle:{ areaColor:'#ff6b5e', borderColor:'#ffffff', borderWidth:0.6 },
+      label:{ color:'#fff', fontWeight:'bold' }
+    }));
+  }
+  if (scope.mode === 'country' && scope.country){
+    const fn = countryFeatureName(scope.country);
+    if (fn && !visited.includes(fn)){
+      regions.push({ name:fn, itemStyle:{ areaColor:'#ff6b5e', borderColor:'#ffffff', borderWidth:0.6 }, label:{ color:'#fff', fontWeight:'bold' } });
+    }
+  }
+
+  const lineData = [];
+  for (let i=0;i<seq.length-1;i++){
+    if (seq[i].coords && seq[i+1].coords) lineData.push({ coords:[seq[i].coords, seq[i+1].coords] });
+  }
+  const scatterData = seq.filter(s => s.coords).map(s => ({ value:[s.coords[0], s.coords[1]], order:s.order, label:s.label, date:s.date }));
+
+  const geo = {
+    map: mapInfo.name,
+    roam: true,
+    scaleLimit:{ min:0.6, max:60 },
+    label:{ show:true, color:'#5b6b7f', fontSize:11, fontFamily:'PingFang SC, Microsoft YaHei' },
+    itemStyle:{ areaColor:'#1f2c42', borderColor:'#3b4a63', borderWidth:0.6 },
+    emphasis:{ label:{ color:'#fff' }, itemStyle:{ areaColor:'#34465f' } },
+    regions
+  };
+  if (mapInfo.center) geo.center = mapInfo.center;
+  if (mapInfo.zoom) geo.zoom = mapInfo.zoom;
+
+  chart.setOption({
+    backgroundColor:'transparent',
+    tooltip:{
+      trigger:'item',
+      backgroundColor:'#111827',
+      borderColor:'#334155',
+      textStyle:{ color:'#e2e8f0' },
+      formatter: p => {
+        if (p.seriesType === 'effectScatter') return `${p.data.order}. ${p.data.label}<br/>${p.data.date || ''}`;
+        return p.name;
+      }
+    },
+    geo,
+    series:[
+      {
+        type:'lines', coordinateSystem:'geo', zlevel:2, data:lineData,
+        lineStyle:{ color:'#ff7a6e', width:2.4, curveness:0.18, opacity:0.95 },
+        effect:{ show:true, period:5, trailLength:0.25, symbol:'arrow', symbolSize:6, color:'#ffd166' }
+      },
+      {
+        type:'effectScatter', coordinateSystem:'geo', zlevel:3, data:scatterData,
+        symbolSize:15, rippleEffect:{ brushType:'stroke', scale:3 },
+        label:{ show:true, position:'right', distance:6, color:'#fff', fontSize:12,
+                formatter: p => `${p.data.order}. ${p.data.label}` },
+        itemStyle:{ color:'#ff4d4f', shadowBlur:8, shadowColor:'#ff4d4f' }
+      }
+    ]
+  }, true);
+}
+
+function hexA(hex, alpha){
+  const h = hex.replace('#','');
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/* ---------- 面包屑 / 下钻交互 ---------- */
+function updateBreadcrumb(){
+  const view = effectiveView();
+  const chain = ancestorChain(view);
+  const el = $('breadcrumb');
+  el.innerHTML = chain.map((v,i) =>
+    `<span class="crumb ${i===chain.length-1?'cur':''}" data-i="${i}">${esc(viewLabel(v))}</span>`
+  ).join('<span class="sep">›</span>');
+  el.querySelectorAll('.crumb').forEach(c => {
+    c.onclick = () => {
+      const i = +c.dataset.i;
+      if (i === chain.length - 1 && drillStack.length === 0) return;
+      drillStack = chain.slice(0, i + 1);
+      render();
+    };
+  });
+  $('backBtn').style.display = drillStack.length ? 'inline-flex' : 'none';
+}
+
+function bindChartEvents(){
+  chart.on('click', params => {
+    if (params.componentType !== 'geo' || !params.name) return;
+    const view = effectiveView();
+    const name = params.name;
+    if (view.level === 'country' && view.country === '中国'){
+      if (provinceByName.has(name)){ drillStack.push({ level:'province', province:name }); render(); }
+    } else if (view.level === 'province'){
+      drillStack.push({ level:'city', province:view.province, city:name }); render();
+    } else if (view.level === 'city' || view.level === 'district'){
+      drillStack.push({ level:'district', province:view.province, city:view.city || name, district:name }); render();
+    } else if (view.level === 'country' && view.country !== '中国'){
+      const iso = countryIso(view.country);
+      const feats = admin1ByIso.get(iso) || [];
+      const sf = feats.find(x => x.properties.name === name || stateDisplayName(x) === name);
+      if (sf){ drillStack.push({ level:'state', country:view.country, state: stateDisplayName(sf) || name }); render(); }
+      else {
+        const f = worldByName.get(name.toLowerCase());
+        if (f){ drillStack.push({ level:'country', country: f.properties.nameZh || f.properties.name, iso2: f.properties.iso2 }); render(); }
+      }
+    } else if (view.level === 'state'){
+      const iso = countryIso(view.country);
+      const feats = admin1ByIso.get(iso) || [];
+      const sf = feats.find(x => x.properties.name === name || stateDisplayName(x) === name);
+      if (sf && stateDisplayName(sf) !== view.state){
+        drillStack[drillStack.length - 1] = { level:'state', country:view.country, state: stateDisplayName(sf) || name };
+        render();
+      }
+    } else if (view.level === 'continent' || view.level === 'world'){
+      const f = worldByName.get(name.toLowerCase());
+      if (f){ drillStack.push({ level:'country', country: f.properties.nameZh || f.properties.name, iso2: f.properties.iso2 }); render(); }
+    }
+  });
+}
+
+/* ---------- 主渲染入口 ---------- */
+function scopeText(scope){
+  switch(scope.mode){
+    case 'empty': return '还没有记录，先添加一个地方吧 👣';
+    case 'world': return '足迹遍布多个大洲 —— 显示去过的 <b>洲</b>，并按时间连线';
+    case 'continent': return `足迹集中在 <b>${scope.continent}</b> —— 显示去过的 <b>国家/地区</b>`;
+    case 'country': return `足迹在 <b>${scope.country}</b> —— 显示去过的 <b>州/省</b>`;
+    case 'state': return `足迹在 <b>${scope.state}</b>（${scope.country}）—— 就这里啦`;
+    case 'china': return '足迹在中国 —— 显示去过的 <b>省份</b>，并按时间连线';
+    case 'province': return `足迹在 <b>${scope.province}</b> —— 显示去过的 <b>城市</b>`;
+    case 'city': return `足迹在 <b>${scope.city}</b> —— 显示去过的 <b>区县</b>`;
+    case 'district': return `足迹集中在 <b>${scope.district}</b> —— 就这里啦`;
+  }
+  return '';
+}
+function updateScopeBar(scope){ $('scopeBar').innerHTML = '📌 当前视图：' + scopeText(scope); }
+
+async function render(){
+  updateJourney();
+  const view = effectiveView();
+  const scope = scopeFromView(view);
+  updateScopeBar(scope);
+  updateBreadcrumb();
+  $('emptyTip').style.display = places.length ? 'none' : 'flex';
+  if (!places.length){
+    drillStack = [];
+    updateBreadcrumb();
+    try { await prepareMap({mode:'world'}); chart.setOption({ geo:{ map:'world', roam:true, label:{show:true,color:'#5b6b7f',fontSize:11}, itemStyle:{areaColor:'#1f2c42',borderColor:'#3b4a63',borderWidth:0.6} }, series:[] }, true); }
+    catch(e){}
+    return;
+  }
+  try {
+    const mapInfo = await prepareMap(scope);
+    const seq = buildSequence(places, scope);
+    draw(scope, mapInfo, seq);
+  } catch(e){
+    toast('地图加载失败：' + e.message);
+  }
+}
+
+/* ---------- 列表 ---------- */
+function updateJourney(){
+  const sorted = [...places].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+  let html = `<div class="h"><span>我的足迹</span><span>${sorted.length} 处</span></div>`;
+  let lastMonth = null, idx = 0;
+  for (const p of sorted){
+    const ym = (p.date || '').slice(0,7);
+    if (ym !== lastMonth){
+      lastMonth = ym;
+      html += `<div class="month-sep">${ym ? (ym.slice(0,4) + ' 年 ' + (+ym.slice(5)) + ' 月') : '未标注日期'}</div>`;
+    }
+    idx++;
+    const hi = [p.country, p.province, p.city, p.district, p.state].filter(Boolean).join(' · ');
+    html += `<div class="item">
+      <div class="no">${idx}</div>
+      <div class="body">
+        <div class="nm">${esc(p.name)}</div>
+        <div class="dt">${esc(p.date)}</div>
+        <div class="hi">${esc(hi)}</div>
+      </div>
+      <button class="del" data-id="${p.id}" title="删除">×</button>
+    </div>`;
+  }
+  const box = $('journey');
+  box.innerHTML = html;
+  box.querySelectorAll('.del').forEach(b => b.onclick = () => { removePlace(b.dataset.id); });
+}
+
+/* ---------- 增删 ---------- */
+function addPlace(p){
+  places.push({ id: Date.now() + '' + Math.random().toString(36).slice(2,6), ...p });
+  persist();
+  render();
+}
+function removePlace(id){
+  places = places.filter(p => p.id !== id);
+  persist();
+  render();
+}
+function clearAll(){
+  places = [];
+  persist();
+  render();
+  toast('已清空');
+}
+function persist(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(places)); } catch(e){} }
+function loadStore(){ try { const s = localStorage.getItem(STORE_KEY); if (s) places = JSON.parse(s); } catch(e){} }
+
+/* ---------- 日期下拉 ---------- */
+function fillDateSelects(){
+  const yearSel = $('yearSel'), monthSel = $('monthSel'), daySel = $('daySel');
+  const curYear = new Date().getFullYear();
+  let yHtml = '';
+  for (let y = curYear; y >= curYear - 30; y--) yHtml += `<option value="${y}">${y} 年</option>`;
+  yearSel.innerHTML = yHtml;
+  monthSel.innerHTML = Array.from({length:12}, (_,i) => `<option value="${i+1}">${i+1} 月</option>`).join('');
+  const now = new Date();
+  yearSel.value = now.getFullYear();
+  monthSel.value = now.getMonth() + 1;
+  fillDaySelect();
+  daySel.value = now.getDate();
+}
+function fillDaySelect(){
+  const y = +$('yearSel').value, m = +$('monthSel').value;
+  const days = new Date(y, m, 0).getDate();
+  const cur = +$('daySel').value;
+  $('daySel').innerHTML = Array.from({length:days}, (_,i) => `<option value="${i+1}">${i+1} 日</option>`).join('');
+  $('daySel').value = (cur && cur <= days) ? cur : days;
+}
+function dateFromSelects(){
+  const y = $('yearSel').value;
+  const m = String($('monthSel').value).padStart(2,'0');
+  const d = String($('daySel').value).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+/* ---------- 级联下拉 ---------- */
+function fillCountrySelect(){
+  const sel = $('selCountry');
+  const names = new Set(['中国']);
+  COUNTRIES.forEach(c => names.add(c[0]));
+  if (world) world.features.forEach(f => { if (f.properties.nameZh) names.add(f.properties.nameZh); });
+  const arr = [...names].sort((a,b) => a === '中国' ? -1 : b === '中国' ? 1 : a.localeCompare(b));
+  sel.innerHTML = arr.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  fillProvinceSelect();
+}
+function fillProvinceSelect(){
+  const sel = $('selProvince');
+  sel.innerHTML = PROVINCES.map(p => `<option value="${esc(p[0])}">${esc(p[0])}</option>`).join('');
+  fillCitySelect();
+}
+function fillCitySelect(){
+  const sel = $('selCity');
+  const p = provinceByName.get($('selProvince').value);
+  sel.innerHTML = '<option value="">（不选，仅到省）</option>' +
+    (p ? p.cities.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('') : '');
+  $('selDistrict').innerHTML = '<option value="">（选市后加载区县）</option>';
+}
+async function fillDistrictSelect(restoreValue){
+  const province = $('selProvince').value;
+  const city = $('selCity').value;
+  const sel = $('selDistrict');
+  if (!city){ sel.innerHTML = '<option value="">（请先选市）</option>'; return; }
+  sel.innerHTML = '<option value="">加载中…</option>';
+  try {
+    const districts = await getCityDistricts(province, city);
+    sel.innerHTML = '<option value="">（不选，仅到市）</option>' +
+      districts.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+    if (restoreValue && districts.includes(restoreValue)) sel.value = restoreValue;
+  } catch(e){
+    sel.innerHTML = '<option value="">区县加载失败</option>';
+  }
+}
+async function fillStateSelect(restoreValue){
+  const country = $('selCountry').value;
+  const sel = $('selState');
+  if (country === '中国' || !country){ sel.innerHTML = '<option value="">（不适用）</option>'; return; }
+  sel.innerHTML = '<option value="">加载州/省…</option>';
+  try {
+    await ensureAdmin1();
+    const iso = countryIso(country);
+    const feats = admin1ByIso.get(iso) || [];
+    sel.innerHTML = '<option value="">（不选，仅到国家）</option>' +
+      feats.map(f => { const dn = stateDisplayName(f); return `<option value="${esc(dn)}">${esc(dn)}</option>`; }).join('');
+    if (restoreValue && [...sel.options].some(o => o.value === restoreValue)) sel.value = restoreValue;
+  } catch(e){
+    sel.innerHTML = '<option value="">州/省加载失败</option>';
+  }
+}
+function updateCascadeVisibility(){
+  const isChina = $('selCountry').value === '中国';
+  $('provField').style.display = isChina ? '' : 'none';
+  $('cityField').style.display = isChina ? '' : 'none';
+  $('distField').style.display = isChina ? '' : 'none';
+  $('stateField').style.display = isChina ? 'none' : '';
+}
+
+/* ---------- 表单持久化 ---------- */
+function saveForm(){
+  try {
+    localStorage.setItem(FORM_KEY, JSON.stringify({
+      name: $('nameInput').value,
+      year: $('yearSel').value, month: $('monthSel').value, day: $('daySel').value,
+      country: $('selCountry').value, province: $('selProvince').value,
+      city: $('selCity').value, district: $('selDistrict').value, state: $('selState').value
+    }));
+  } catch(e){}
+}
+async function loadForm(){
+  try {
+    const s = localStorage.getItem(FORM_KEY);
+    if (!s) return;
+    const d = JSON.parse(s);
+    if (d.name) $('nameInput').value = d.name;
+    if (d.year) $('yearSel').value = d.year;
+    if (d.month){ $('monthSel').value = d.month; fillDaySelect(); }
+    if (d.day) $('daySel').value = d.day;
+    if (d.country){ $('selCountry').value = d.country; updateCascadeVisibility(); }
+    if (d.country === '中国'){
+      if (d.province){ $('selProvince').value = d.province; fillCitySelect(); }
+      if (d.city){ $('selCity').value = d.city; await fillDistrictSelect(d.district || null); }
+    } else if (d.country){
+      await fillStateSelect(d.state || null);
+    }
+  } catch(e){}
+}
+
+/* ---------- 添加逻辑 ---------- */
+function toast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function handleAdd(){
+  const raw = $('nameInput').value.trim();
+  const date = dateFromSelects();
+  if (raw){
+    const resolved = resolvePlaceName(raw);
+    if (resolved){
+      addPlace({ ...resolved, date });
+      $('resolveChip').className = 'resolve-chip';
+      $('resolveChip').innerHTML = `已识别：<b>${esc(resolved.name)}</b>（${esc([resolved.country,resolved.province,resolved.city,resolved.district,resolved.state].filter(Boolean).join(' / ') || '国家')}）`;
+    } else {
+      $('resolveChip').className = 'resolve-chip err';
+      $('resolveChip').textContent = '未识别，请用下方的精确选择，或输入 省/市/国家 名称';
+      return;
+    }
+  } else {
+    const country = $('selCountry').value;
+    if (country === '中国'){
+      const province = $('selProvince').value;
+      const city = $('selCity').value || null;
+      const district = $('selDistrict').value || null;
+      const nm = district || city || province;
+      addPlace({ name: nm, continent:'亚洲', country:'中国', iso2:'CN', province, city, district, state:null, date });
+    } else {
+      const state = $('selState').value || null;
+      const hit = countryByCn.get(country);
+      const cont = hit ? hit.continent : (continentOfCountry(country) || '其他');
+      const iso2 = hit ? hit.iso2 : (countryIso(country) || '');
+      addPlace({ name: state || country, continent:cont, country, iso2, state, date });
+    }
+    $('resolveChip').className = 'resolve-chip';
+    $('resolveChip').innerHTML = '已添加 ✨';
+  }
+  saveForm();
+}
+
+/* ---------- 示例数据 ---------- */
+const SAMPLE = [
+  ['杭州','2023-03-15','亚洲','中国','CN','浙江省','杭州市',null,null],
+  ['上海','2023-05-20','亚洲','中国','CN','上海市','上海市',null,null],
+  ['北京','2023-09-01','亚洲','中国','CN','北京市','北京市',null,null],
+  ['东京','2023-11-10','亚洲','日本','JP',null,null,null,null],
+  ['曼谷','2024-02-14','亚洲','泰国','TH',null,null,null,null],
+  ['巴黎','2024-06-01','欧洲','法国','FR',null,null,null,null],
+  ['加利福尼亚','2024-09-20','北美洲','美国','US',null,null,null,'California'],
+  ['悉尼','2025-01-05','大洋洲','澳大利亚','AU',null,null,null,null],
+];
+
+function loadSample(){
+  places = SAMPLE.map((s, i) => ({
+    id: 'sample-' + i,
+    name: s[0], date: s[1], continent: s[2], country: s[3], iso2: s[4],
+    province: s[5] || null, city: s[6] || null, district: s[7] || null, state: s[8] || null
+  }));
+  persist();
+  drillStack = [];
+  render();
+  toast('已载入示例数据');
+}
+
+/* ---------- 输入建议 ---------- */
+function updateSuggest(){
+  const names = new Set();
+  COUNTRIES.forEach(c => names.add(c[0]));
+  PROVINCES.forEach(p => { names.add(p[0]); p[2].forEach(c => names.add(c)); });
+  if (world) world.features.forEach(f => { if (f.properties.nameZh) names.add(f.properties.nameZh); });
+  $('suggest').innerHTML = [...names].map(n => `<option value="${esc(n)}"></option>`).join('');
+}
+
+/* ---------- 事件绑定 ---------- */
+$('addBtn').onclick = handleAdd;
+$('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') handleAdd(); });
+$('clearBtn').onclick = () => { if (places.length && confirm('确定清空所有足迹？')) clearAll(); else if (!places.length) toast('已经是空的啦'); };
+$('sampleBtn').onclick = loadSample;
+$('backBtn').onclick = () => { if (drillStack.length){ drillStack.pop(); render(); } };
+
+$('yearSel').onchange = () => { fillDaySelect(); saveForm(); };
+$('monthSel').onchange = () => { fillDaySelect(); saveForm(); };
+$('daySel').onchange = saveForm;
+$('nameInput').oninput = saveForm;
+
+$('selCountry').onchange = () => {
+  updateCascadeVisibility();
+  if ($('selCountry').value === '中国'){ fillProvinceSelect(); }
+  else { fillStateSelect(); }
+  saveForm();
+};
+$('selProvince').onchange = () => { fillCitySelect(); saveForm(); };
+$('selCity').onchange = () => { fillDistrictSelect(); saveForm(); };
+$('selDistrict').onchange = saveForm;
+$('selState').onchange = saveForm;
+
+/* ---------- 初始化 ---------- */
+(async function init(){
+  loadStore();
+  fillDateSelects();
+  updateCascadeVisibility();
+  updateSuggest();
+  bindChartEvents();
+  $('selCountry').value = '中国';
+  try {
+    await getMap('world', loadWorld, null);
+    fillCountrySelect();
+  } catch(e){ fillCountrySelect(); }
+  $('selCountry').value = '中国';
+  updateCascadeVisibility();
+  await loadForm();
+  window.addEventListener('resize', () => chart.resize());
+  render();
+})();
+</script>
+</body>
+</html>
