@@ -6,7 +6,6 @@
 <title>足迹地图 · 你去过的地方</title>
 <script src="https://registry.npmmirror.com/echarts/5.5.1/files/dist/echarts.min.js"></script>
 <script src="world.js"></script>
-<script src="admin1.js"></script>
 <script src="cities.js"></script>
 <style>
   :root{
@@ -126,7 +125,7 @@
   <div class="wrap">
     <aside>
       <div class="form">
-        <label>快速输入（自动识别 区/市/省/国/国外城市）</label>
+        <label>快速输入（自动识别 区/市/省/国）</label>
         <div class="row"><div class="field">
           <input id="nameInput" list="suggest" placeholder="如：杭州 / 浙江省 / 日本 / 巴黎" autocomplete="off" />
         </div></div>
@@ -139,7 +138,7 @@
           <div class="field"><select id="daySel"></select></div>
         </div>
 
-        <div class="group-title">精确选择（中国到区县，国外到州/省或城市）</div>
+        <div class="group-title">精确选择（中国可到区县，国外到国家）</div>
         <div class="row">
           <div class="field"><select id="selCountry"></select></div>
           <div class="field" id="provField"><select id="selProvince"></select></div>
@@ -417,21 +416,18 @@ function resolvePlaceName(raw){
   if (worldByName.has(name.toLowerCase())){
     const f = worldByName.get(name.toLowerCase());
     const p = f.properties;
-    const continent = CONTINENT_ZH[p.continentEn] || '其他';
     const cn = p.nameZh || p.name || name;
-    return { name, continent, country:cn, iso2:p.iso2 || '' };
+    const hit = countryByCn.get(cn);
+    const continent = hit ? hit.continent : (CONTINENT_ZH[p.continentEn] || '其他');
+    const iso2 = hit ? hit.iso2 : (p.iso2 && p.iso2 !== '-99' ? p.iso2 : '');
+    return { name: cn, continent, country: cn, iso2 };
   }
   const cityMatch = matchWorldCity(name);
   if (cityMatch){
     const hit = countryByIso.get(cityMatch.iso2);
-    return {
-      name: cityMatch.zh || cityMatch.en,
-      continent: (cityMatch.continent && cityMatch.continent !== '其他') ? cityMatch.continent : (hit ? hit.continent : '其他'),
-      country: hit ? hit.cn : (cityMatch.countryZh || cityMatch.en),
-      iso2: cityMatch.iso2,
-      province: null, city: cityMatch.zh || cityMatch.en, district: null, state: null,
-      lat: cityMatch.lat, lng: cityMatch.lng, level: 'city'
-    };
+    const countryZh = hit ? hit.cn : (cityMatch.countryZh || cityMatch.en);
+    const continent = (cityMatch.continent && cityMatch.continent !== '其他') ? cityMatch.continent : (hit ? hit.continent : '其他');
+    return { name: countryZh, continent, country: countryZh, iso2: cityMatch.iso2 };
   }
   return null;
 }
@@ -577,7 +573,7 @@ function stateDisplayName(f){
 }
 function ensureAdmin1(){
   if (admin1) return admin1;
-  admin1 = window.ADMIN1_GEOJSON;
+  admin1 = window.ADMIN1_GEOJSON || { features: [] };
   admin1.features = (admin1.features || []).filter(f => f.geometry && f.geometry.type);
   admin1ByIso.clear();
   for (const f of admin1.features){
@@ -622,17 +618,6 @@ async function prepareMap(scope){
     return { name, center:null, zoom:null };
   }
   if (scope.mode === 'country'){
-    const iso = countryIso(scope.country);
-    if (iso){
-      try {
-        await ensureAdmin1();
-        const feats = admin1ByIso.get(iso);
-        if (feats && feats.length){
-          await getStateMap(scope.country);
-          return { name:'state:' + iso, center:null, zoom:1.2 };
-        }
-      } catch(e){ /* 州数据失败则回退世界图 */ }
-    }
     await getMap('world', loadWorld, null);
     const f = (worldByName.get(scope.country.toLowerCase()) || worldByIso.get(scope.country));
     const c = f ? featureCentroid(f.geometry) : null;
@@ -704,8 +689,6 @@ function regionOf(p, scope){
   if (scope.mode === 'world') return { key:p.continent, label:p.continent, coords:CONTINENT_CENTER[p.continent] || null };
   if (scope.mode === 'continent') return countryPoint(p);
   if (scope.mode === 'country'){
-    if (p.level === 'city' && typeof p.lat === 'number') return { key:p.name, label:p.name, coords:[p.lng, p.lat] };
-    if (p.country !== '中国' && p.state) return statePointOf(p, p.country);
     return countryPoint(p);
   }
   if (scope.mode === 'state') return statePointOf(p, scope.country);
@@ -885,22 +868,8 @@ function bindChartEvents(){
     } else if (view.level === 'city' || view.level === 'district'){
       drillStack.push({ level:'district', province:view.province, city:view.city || name, district:name }); render();
     } else if (view.level === 'country' && view.country !== '中国'){
-      const iso = countryIso(view.country);
-      const feats = admin1ByIso.get(iso) || [];
-      const sf = feats.find(x => x.properties.name === name || stateDisplayName(x) === name);
-      if (sf){ drillStack.push({ level:'state', country:view.country, state: stateDisplayName(sf) || name }); render(); }
-      else {
-        const f = worldByName.get(name.toLowerCase());
-        if (f){ drillStack.push({ level:'country', country: f.properties.nameZh || f.properties.name, iso2: f.properties.iso2 }); render(); }
-      }
-    } else if (view.level === 'state'){
-      const iso = countryIso(view.country);
-      const feats = admin1ByIso.get(iso) || [];
-      const sf = feats.find(x => x.properties.name === name || stateDisplayName(x) === name);
-      if (sf && stateDisplayName(sf) !== view.state){
-        drillStack[drillStack.length - 1] = { level:'state', country:view.country, state: stateDisplayName(sf) || name };
-        render();
-      }
+      const f = worldByName.get(name.toLowerCase());
+      if (f){ drillStack.push({ level:'country', country: f.properties.nameZh || f.properties.name, iso2: f.properties.iso2 }); render(); }
     } else if (view.level === 'continent' || view.level === 'world'){
       const f = worldByName.get(name.toLowerCase());
       if (f){ drillStack.push({ level:'country', country: f.properties.nameZh || f.properties.name, iso2: f.properties.iso2 }); render(); }
@@ -914,8 +883,8 @@ function scopeText(scope){
     case 'empty': return '还没有记录，先添加一个地方吧 👣';
     case 'world': return '足迹遍布多个大洲 —— 显示去过的 <b>洲</b>，并按时间连线';
     case 'continent': return `足迹集中在 <b>${scope.continent}</b> —— 显示去过的 <b>国家/地区</b>`;
-    case 'country': return `足迹在 <b>${scope.country}</b> —— 显示去过的 <b>州/省</b>`;
-    case 'state': return `足迹在 <b>${scope.state}</b>（${scope.country}）—— 就这里啦`;
+    case 'country': return `足迹在 <b>${scope.country}</b>`;
+    case 'state': return `足迹在 <b>${scope.state}</b>（${scope.country}）`;
     case 'china': return '足迹在中国 —— 显示去过的 <b>省份</b>，并按时间连线';
     case 'province': return `足迹在 <b>${scope.province}</b> —— 显示去过的 <b>城市</b>`;
     case 'city': return `足迹在 <b>${scope.city}</b> —— 显示去过的 <b>区县</b>`;
@@ -1064,33 +1033,15 @@ async function fillDistrictSelect(restoreValue){
   }
 }
 async function fillStateSelect(restoreValue){
-  const country = $('selCountry').value;
   const sel = $('selState');
-  if (country === '中国' || !country){ sel.innerHTML = '<option value="">（不适用）</option>'; return; }
-  sel.innerHTML = '<option value="">加载…</option>';
-  try {
-    await ensureAdmin1();
-    const iso = countryIso(country);
-    const feats = admin1ByIso.get(iso) || [];
-    if (feats.length){
-      sel.innerHTML = '<option value="">（不选，仅到国家）</option>' +
-        feats.map(f => { const dn = stateDisplayName(f); return `<option value="${esc(dn)}">${esc(dn)}</option>`; }).join('');
-    } else {
-      const cities = cityListOfIso(iso).slice(0, 200);
-      sel.innerHTML = '<option value="">（不选，仅到国家）</option>' +
-        cities.map(c => `<option value="${esc(c.zh || c.en)}">${esc(c.zh || c.en)}</option>`).join('');
-    }
-    if (restoreValue && [...sel.options].some(o => o.value === restoreValue)) sel.value = restoreValue;
-  } catch(e){
-    sel.innerHTML = '<option value="">加载失败</option>';
-  }
+  sel.innerHTML = '<option value="">（不适用）</option>';
 }
 function updateCascadeVisibility(){
   const isChina = $('selCountry').value === '中国';
   $('provField').style.display = isChina ? '' : 'none';
   $('cityField').style.display = isChina ? '' : 'none';
   $('distField').style.display = isChina ? '' : 'none';
-  $('stateField').style.display = isChina ? 'none' : '';
+  $('stateField').style.display = 'none';
 }
 
 /* ---------- 表单持久化 ---------- */
@@ -1158,20 +1109,10 @@ function handleAdd(){
       const nm = district || city || province;
       addPlace({ name: nm, continent:'亚洲', country:'中国', iso2:'CN', province, city, district, state:null, date });
     } else {
-      const selVal = $('selState').value || null;
       const hit = countryByCn.get(country);
       const cont = hit ? hit.continent : (continentOfCountry(country) || '其他');
       const iso2 = hit ? hit.iso2 : (countryIso(country) || '');
-      if (selVal){
-        const cm = matchWorldCity(selVal);
-        if (cm && cm.iso2 === iso2){
-          addPlace({ name: cm.zh || cm.en, continent: cont, country, iso2, province:null, city:cm.zh||cm.en, district:null, state:null, lat:cm.lat, lng:cm.lng, level:'city', date });
-        } else {
-          addPlace({ name: selVal, continent: cont, country, iso2, state: selVal, date });
-        }
-      } else {
-        addPlace({ name: country, continent: cont, country, iso2, date });
-      }
+      addPlace({ name: country, continent: cont, country, iso2, date });
     }
     $('resolveChip').className = 'resolve-chip';
     $('resolveChip').innerHTML = '已添加 ✨';
@@ -1181,22 +1122,21 @@ function handleAdd(){
 
 /* ---------- 示例数据 ---------- */
 const SAMPLE = [
-  ['杭州','2023-03-15','亚洲','中国','CN','浙江省','杭州市',null,null,null,null,null],
-  ['上海','2023-05-20','亚洲','中国','CN','上海市','上海市',null,null,null,null,null],
-  ['北京','2023-09-01','亚洲','中国','CN','北京市','北京市',null,null,null,null,null],
-  ['东京','2023-11-10','亚洲','日本','JP',null,'东京',null,null,35.687,139.7495,'city'],
-  ['曼谷','2024-02-14','亚洲','泰国','TH',null,'曼谷',null,null,13.7519,100.5147,'city'],
-  ['巴黎','2024-06-01','欧洲','法国','FR',null,'巴黎',null,null,48.8686,2.3314,'city'],
-  ['加利福尼亚','2024-09-20','北美洲','美国','US',null,null,null,'California',null,null,null],
-  ['悉尼','2025-01-05','大洋洲','澳大利亚','AU',null,'悉尼',null,null,-33.9181,151.1832,'city'],
+  ['杭州','2023-03-15','亚洲','中国','CN','浙江省','杭州市',null,null],
+  ['上海','2023-05-20','亚洲','中国','CN','上海市','上海市',null,null],
+  ['北京','2023-09-01','亚洲','中国','CN','北京市','北京市',null,null],
+  ['日本','2023-11-10','亚洲','日本','JP',null,null,null,null],
+  ['泰国','2024-02-14','亚洲','泰国','TH',null,null,null,null],
+  ['法国','2024-06-01','欧洲','法国','FR',null,null,null,null],
+  ['美国','2024-09-20','北美洲','美国','US',null,null,null,null],
+  ['澳大利亚','2025-01-05','大洋洲','澳大利亚','AU',null,null,null,null],
 ];
 
 function loadSample(){
   places = SAMPLE.map((s, i) => ({
     id: 'sample-' + i,
     name: s[0], date: s[1], continent: s[2], country: s[3], iso2: s[4],
-    province: s[5] || null, city: s[6] || null, district: s[7] || null, state: s[8] || null,
-    lat: s[9] || null, lng: s[10] || null, level: s[11] || null
+    province: s[5] || null, city: s[6] || null, district: s[7] || null, state: s[8] || null
   }));
   persist();
   drillStack = [];
@@ -1210,7 +1150,6 @@ function updateSuggest(){
   COUNTRIES.forEach(c => names.add(c[0]));
   PROVINCES.forEach(p => { names.add(p[0]); p[2].forEach(c => names.add(c)); });
   if (world) world.features.forEach(f => { if (f.properties.nameZh) names.add(f.properties.nameZh); });
-  (window.CITIES || []).forEach(c => { if (c[3] !== 'CN' && c[7] > 500000) names.add(c[1]); });
   $('suggest').innerHTML = [...names].map(n => `<option value="${esc(n)}"></option>`).join('');
 }
 
